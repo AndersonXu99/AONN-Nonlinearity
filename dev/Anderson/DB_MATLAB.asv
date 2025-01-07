@@ -1,0 +1,184 @@
+% run_simulation.m
+% This script runs the simulation and plots the results using the provided constants.
+
+% Clear workspace and command window
+clear; 
+clc; 
+close all; 
+
+% Define constants and make them global
+global Gamma3 Gamma31 Gamma32 Gamma12 Gamma21 gamma12 gamma13 gamma23 k_0 epsilon_0 hbar N mu_13 mu_23 L z
+
+% Physical Constants (provided values)
+epsilon_0 = 8.854e-12;      % Vacuum permittivity (F/m)
+hbar = 1.054e-34;           % Reduced Planck constant (J·s)
+mu_13 = 1.932e-29;          % Dipole moment between states |1> and |3> (C·m)
+mu_23 = 2.53e-29;           % Dipole moment between states |2> and |3> (C·m)
+N = 3.5e10;                 % Atomic number density (atoms/m^3)
+
+Gamma3 = 2 * pi * 6e6;      % Total decay rate from level 3 (rad/s)
+Gamma31 = (5/9) * Gamma3;   % Decay from level 3 to level 1 (rad/s)
+Gamma32 = (4/9) * Gamma3;   % Decay from level 3 to level 2 (rad/s)
+Gamma12 = 0.05 * Gamma3;    % Decay rate between levels 1 and 2 (rad/s)
+Gamma21 = Gamma12;          % Decay rate between levels 2 and 1 (rad/s)
+gamma13 = (Gamma3 + Gamma12) / 2; % Decoherence rate between levels 1 and 3 (rad/s)
+gamma23 = (Gamma3 + Gamma21) / 2; % Decoherence rate between levels 2 and 3 (rad/s)
+gamma12 = (Gamma12 + Gamma21) / 2; % Decoherence rate between ground states (rad/s)
+
+% Wave numbers and spatial parameters
+w_1 = 2 * pi * 3e8 / 795e-9; % Angular frequency of transition (rad/s)
+k_0 = w_1 / 3e8;              % Wave number (rad/m)
+L = 0.1;                      % Length over which integration is performed (m)
+z = 0.00005;                  % Spatial step size (m)
+
+% Parameters for the simulation (Set values directly)
+Om_1 = 3 * Gamma3;            % Omega_1 value (rad/s)
+delta_1 = 0.5 * Gamma3;       % Delta_1 value (rad/s)
+delta_2 = 0.0 * Gamma3;       % Delta_2 value (rad/s)
+
+% Run the plotting function
+plot_OD(Om_1, delta_1, delta_2);
+
+%% Function Definitions
+
+function plot_OD(Om_1, delta_1, delta_2)
+    global Gamma3
+
+    % Call the calculate_OD_1 function to perform calculations
+    [Om_2_list_adapted, ~, Om_1_list, Om_2_vs_z, Om_1_vs_z] = ...
+        calculate_OD_1(Om_1, delta_1, delta_2);
+
+    % Compute transparency for Omega_1 and Omega_2
+    Transparency_Omega_1 = abs(Om_1_vs_z(end, :)).^2 ./ abs(Om_1_vs_z(1, :)).^2;
+    Transparency_Omega_2 = abs(Om_2_vs_z(end, :)).^2 ./ abs(Om_2_vs_z(1, :)).^2;
+
+    % Calculate output intensity based on transparency and initial input power
+    Output_Intensity_Omega_1 = Transparency_Omega_1 .* abs(Om_1_vs_z(1, :)).^2 / (Gamma3^2);
+    Output_Intensity_Omega_2 = Transparency_Omega_2 .* abs(Om_2_vs_z(1, :)).^2 / (Gamma3^2);
+
+    % Plot Output Intensity of Omega_1 vs Initial Omega_2
+    figure;
+    plot((Om_2_list_adapted / Gamma3).^2, Output_Intensity_Omega_1, 'b', 'LineWidth', 2);
+    xlabel('Initial Intensity 2 ($|\Omega_{2,\mathrm{in}} / \Gamma_3|^2$)', 'Interpreter', 'latex');
+    ylabel('Output Intensity 1 ($|\Omega_{1,\mathrm{out}} / \Gamma_3|^2$)', 'Interpreter', 'latex');
+    title(['Output Intensity 1 vs $I_{2,\mathrm{in}} / (\Gamma_3)^2$ for ', ...
+           '$\Omega_1/\Gamma_3=', num2str(Om_1 / Gamma3), '$, ', ...
+           '$\Delta_1/\Gamma_3=', num2str(delta_1 / Gamma3), '$, ', ...
+           '$\Delta_2/\Gamma_3=', num2str(delta_2 / Gamma3), '$'], 'Interpreter', 'latex');
+    grid on;
+    legend('Output Intensity $\Omega_1$', 'Interpreter', 'latex');
+
+    % Plot Output Intensity of Omega_2 vs Initial Omega_2
+    figure;
+    plot((Om_2_list_adapted / Gamma3).^2, Output_Intensity_Omega_2, 'r', 'LineWidth', 2);
+    xlabel('Initial Intensity 2 ($|\Omega_{2,\mathrm{in}} / \Gamma_3|^2$)', 'Interpreter', 'latex');
+    ylabel('Output Intensity 2 ($|\Omega_{2,\mathrm{out}} / \Gamma_3|^2$)', 'Interpreter', 'latex');
+    title(['Output Intensity 2 vs $I_{2,\mathrm{in}} / (\Gamma_3)^2$ for ', ...
+           '$\Omega_1/\Gamma_3=', num2str(Om_1 / Gamma3), '$, ', ...
+           '$\Delta_1/\Gamma_3=', num2str(delta_1 / Gamma3), '$, ', ...
+           '$\Delta_2/\Gamma_3=', num2str(delta_2 / Gamma3), '$'], 'Interpreter', 'latex');
+    grid on;
+    legend('Output Intensity $\Omega_2$', 'Interpreter', 'latex');
+end
+
+function [Om_2_list_adapted, Om_2_list, Om_1_list, Om_2_vs_z, Om_1_vs_z] = ...
+    calculate_OD_1(Om_1, delta_1, delta_2)
+    global Gamma3 Gamma31 Gamma32 Gamma12 Gamma21 gamma12 gamma13 gamma23 ...
+           k_0 epsilon_0 hbar N mu_13 mu_23 L z
+
+    % Initialize parameters
+    n_rabi = 500;
+    Om_2_list_adapted = linspace(0.005, 12, n_rabi) * Gamma3; % Rabi frequencies in rad/s
+    Om_2_list = Om_2_list_adapted; % Already in rad/s
+    Om_1_list = Om_1 * ones(1, n_rabi); % Omega_1 is constant across the array
+
+    nz = floor(L / z);      % Number of z steps
+    z_array = (0:nz-1) * z; % Array of z values
+
+    % Initialize arrays to store Rabi frequencies at each z step
+    Om_2_vs_z = zeros(nz, n_rabi);
+    Om_1_vs_z = zeros(nz, n_rabi);
+
+    % Precompute constants for efficiency
+    prefactor_2 = z * (1i) * (k_0 / (epsilon_0 * hbar)) * N * mu_23^2;
+    prefactor_1 = z * (1i) * (k_0 / (epsilon_0 * hbar)) * N * mu_13^2;
+
+    % Loop over spatial steps
+    for i = 1:nz
+        if i == floor(nz/4) || i == floor(nz/2) || i == floor(3*nz/4)
+            fprintf('Processing z step %d/%d\n', i, nz);
+        end
+
+        % Initialize arrays to store rho31 and rho32
+        rho31_values = zeros(1, n_rabi);
+        rho32_values = zeros(1, n_rabi);
+
+        % Loop over Rabi frequencies
+        parfor j = 1:n_rabi
+            Om_2_actual = Om_2_list(j);
+            Om_1_actual = Om_1_list(j);
+
+            % Define the imaginary unit
+            I = 1i;
+
+            % Construct the matrix A
+            A = [
+                % Row 1
+                Gamma31 + Gamma12, 0, I*Om_1_actual/2, 0, Gamma31 - Gamma21, 0, -I*conj(Om_1_actual)/2, 0;
+                % Row 2
+                0, gamma12 - I*(delta_2 - delta_1), I*Om_2_actual/2, 0, 0, 0, 0, -I*conj(Om_1_actual)/2;
+                % Row 3
+                I*conj(Om_1_actual), I*conj(Om_2_actual)/2, gamma13 + I*delta_1, 0, I*conj(Om_1_actual)/2, 0, 0, 0;
+                % Row 4
+                0, 0, 0, gamma12 + I*(delta_2 - delta_1), 0, I*Om_1_actual/2, -I*conj(Om_2_actual)/2, 0;
+                % Row 5
+                Gamma32 - Gamma12, 0, 0, 0, Gamma32 + Gamma21, I*Om_2_actual/2, 0, -I*conj(Om_2_actual)/2;
+                % Row 6
+                I*conj(Om_2_actual)/2, 0, 0, I*conj(Om_1_actual)/2, I*conj(Om_2_actual), gamma23 + I*delta_2, 0, 0;
+                % Row 7
+                -I*Om_1_actual, 0, 0, -I*Om_2_actual/2, -I*Om_1_actual/2, 0, gamma13 - I*delta_1, 0;
+                % Row 8
+                -I*Om_2_actual/2, -I*Om_1_actual/2, 0, 0, -I*Om_2_actual, 0, 0, gamma23 - I*delta_2
+            ];
+
+            % Construct the vector b
+            b = [
+                Gamma31;
+                0;
+                I*conj(Om_1_actual)/2;
+                0;
+                Gamma32;
+                I*conj(Om_2_actual)/2;
+                -I*Om_1_actual/2;
+                -I*Om_2_actual/2
+            ];
+
+            % Solve the linear system A * v = b
+            try
+                v = A \ b;
+            catch
+                % Handle singular matrix
+                fprintf('nan\n');
+                rho31_values(j) = NaN;
+                rho32_values(j) = NaN;
+                continue;
+            end
+
+            % Extract the solutions
+            rho31 = v(7);
+            rho32 = v(8);
+
+            % Store the coherences
+            rho31_values(j) = rho31;
+            rho32_values(j) = rho32;
+        end
+
+        % Update the Rabi frequencies
+        Om_2_list = Om_2_list + prefactor_2 * rho32_values;
+        Om_1_list = Om_1_list + prefactor_1 * rho31_values;
+
+        % Record Rabi frequencies at this z step
+        Om_2_vs_z(i, :) = Om_2_list;
+        Om_1_vs_z(i, :) = Om_1_list;
+    end
+end
