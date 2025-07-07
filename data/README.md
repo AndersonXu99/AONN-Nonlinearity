@@ -12,9 +12,3 @@ The `code/` directory contains three standalone implementations of electromagnet
 
 
 
-
-
-
-
-Ask ChatGPT
-
